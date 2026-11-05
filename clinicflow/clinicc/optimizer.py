@@ -5,6 +5,7 @@ from dataclasses import replace
 from .ir import Instr, Const, BINOPS, fmt, to_text
 
 TEMP = re.compile(r"t\d+")
+PASS_KEYS = ("fold", "branch", "dead", "dup")
 
 
 def _positions(op):
@@ -143,7 +144,6 @@ def _duplicates(code, log):
             seen.add(key)
         out.append(i)
     return out
-PASS_KEYS = ("fold", "branch", "dead", "dup")
 
 
 def optimize(code, enabled=None):
