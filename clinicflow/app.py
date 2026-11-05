@@ -117,6 +117,7 @@ S.setdefault("done", set())
 S.setdefault("dept", "Emergency")
 S.setdefault("sb_src", SAMPLES["Broken program (see errors)"])
 S.setdefault("voice_log", [])
+S.setdefault("voice_ai_history", [])
 
 # ================================================================== styling
 CSS = """
@@ -395,7 +396,13 @@ def speak(text):
 
 
 # ================================================================== voice assistant
-VOICE_MODEL = os.getenv("OPENAI_MODEL", "gpt-6-astra")
+# Use a generally available API model by default. You can override this in
+# Streamlit Secrets with OPENAI_MODEL = "your-enabled-model".
+try:
+    VOICE_MODEL = str(st.secrets.get("OPENAI_MODEL", "") or "").strip()
+except Exception:
+    VOICE_MODEL = ""
+VOICE_MODEL = VOICE_MODEL or os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 VOICE_LANGS = {"English (India)": "en-IN", "English (US)": "en-US", "தமிழ் (Tamil)": "ta-IN",
                "हिन्दी (Hindi)": "hi-IN", "తెలుగు (Telugu)": "te-IN"}
 
@@ -512,21 +519,21 @@ def local_intent(q):
 
 
 def ask_claude(q):
-    """
-    General-purpose ClinicFlow AI using OpenAI Responses API and live web search.
-    The function name is retained so the rest of the original app remains compatible.
-    """
-    api_key = os.environ.get("OPENAI_API_KEY")
+    """General-purpose ClinicFlow AI using the OpenAI Responses API."""
+    # Streamlit Cloud Secrets take priority over environment variables.
+    api_key = None
+    try:
+        api_key = st.secrets.get("OPENAI_API_KEY")
+    except Exception:
+        api_key = None
     if not api_key:
-        try:
-            api_key = st.secrets["OPENAI_API_KEY"]
-        except Exception:
-            api_key = None
+        api_key = os.getenv("OPENAI_API_KEY")
+    api_key = str(api_key).strip() if api_key else ""
 
     if not api_key:
         return (
-            "The general AI assistant is not configured yet. "
-            "Add your OPENAI_API_KEY to the Streamlit secrets file or environment."
+            "OpenAI API key is missing. Add OPENAI_API_KEY to your Streamlit "
+            "app Secrets, save, and reboot the app."
         )
 
     try:
@@ -534,39 +541,29 @@ def ask_claude(q):
 
         client = OpenAI(api_key=api_key, timeout=60.0, max_retries=2)
 
+        # Only general AI conversation turns are sent to OpenAI. Local patient
+        # lookups and other built-in hospital commands are deliberately excluded.
         history = []
-        for old_q, old_a, _ in S["voice_log"][-6:]:
+        for old_q, old_a in S.get("voice_ai_history", [])[-4:]:
             history.append({"role": "user", "content": old_q})
             history.append({"role": "assistant", "content": old_a})
 
-        critical_count = sum(
-            patient["priority"] == "Critical" for patient in S["patients"]
-        )
-        open_tasks = sum(
-            task["released"] and not task["done"]
-            for task in build_tasks(results())
-        )
-
-        language_name = S.get("voice_lang_name", "English (India)")
+        language_name = S.get("voice_lang_name", S.get("floating_voice_lang", "English (India)"))
         instructions = (
             "You are ClinicFlow AI Voice, a friendly general-purpose assistant "
             "inside a hospital workflow demonstration application. Answer questions "
-            "across general knowledge, science, technology, education, programming, "
+            "about general knowledge, science, technology, education, programming, "
             "mathematics, history, language, and daily life. Use web search when "
-            "information may be current, changing, local, or when the user asks for "
-            "sources or latest information. Do not pretend you searched if you did not. "
-            "Be honest about uncertainty and distinguish facts from estimates. "
+            "information may be current or when the user asks for latest information. "
+            "Be honest about uncertainty and never claim to have searched if you did not. "
             "The selected speech language is " + language_name + ". Reply in the "
-            "language used by the user and use natural spoken wording, normally "
-            "2 to 6 sentences. Avoid Markdown tables because answers are spoken. "
-            "For medical topics, provide general educational information only. "
-            "Do not diagnose, prescribe, recommend a patient-specific dose, or "
-            "replace a licensed clinician. For emergencies, advise contacting local "
-            "emergency services and a qualified clinician. Never treat demo patient "
-            "records as real clinical records or execute clinical orders. "
-            "For questions about this app, use the supplied app context. "
-            f"Current demo context: {len(S['patients'])} registered patients, "
-            f"{critical_count} marked Critical, and {open_tasks} open workflow tasks."
+            "language used by the user, using natural spoken wording and normally "
+            "2 to 6 sentences. Avoid Markdown tables. For medical topics, provide "
+            "general educational information only: do not diagnose, prescribe, or "
+            "recommend patient-specific doses. For emergencies, advise contacting "
+            "local emergency services and a qualified clinician. Do not request, "
+            "infer, or expose patient-identifying information. This is an academic "
+            "demonstration, not a clinical decision system."
         )
 
         response = client.responses.create(
@@ -577,22 +574,30 @@ def ask_claude(q):
             input=history + [{"role": "user", "content": q}],
             max_output_tokens=700,
         )
-
         answer = (response.output_text or "").strip()
         return answer or "I could not prepare an answer. Please try asking another way."
 
     except ImportError:
-        return (
-            "The OpenAI Python package is missing. "
-            "Install it by running pip install --upgrade openai."
-        )
+        return "The OpenAI package is missing. Add openai to requirements.txt and redeploy."
     except Exception as error:
-        # Do not expose API keys, request headers, or raw exception details.
-        return (
-            "Sorry, I could not reach the AI service. "
-            f"The error type was {type(error).__name__}. Check your internet "
-            "connection, API key, API billing, and configured model."
-        )
+        error_name = type(error).__name__
+        if error_name == "AuthenticationError":
+            return (
+                "OpenAI rejected the API key. In Streamlit Cloud, open App settings "
+                "then Secrets. Replace OPENAI_API_KEY with a newly created, active "
+                "API key, save, and reboot the app. Do not paste the key into GitHub."
+            )
+        if error_name == "RateLimitError":
+            return "OpenAI rate limit or API billing quota reached. Check API billing and usage."
+        if error_name in ("NotFoundError", "BadRequestError"):
+            return (
+                f"The configured OpenAI model or request is not accepted ({error_name}). "
+                "Check OPENAI_MODEL in Streamlit Secrets; otherwise remove it to use "
+                "the default model."
+            )
+        if error_name in ("APIConnectionError", "APITimeoutError"):
+            return "ClinicFlow could not connect to OpenAI. Please try again shortly."
+        return f"ClinicFlow AI encountered {error_name}. Check the app configuration and try again."
 
 
 def handle_voice():
@@ -603,6 +608,8 @@ def handle_voice():
     src = "Built-in"
     if ans is None:
         ans, src = ask_claude(q), "AI"
+        S["voice_ai_history"].append((q, ans))
+        S["voice_ai_history"] = S["voice_ai_history"][-8:]
     S["voice_log"].append((q, ans, src))
     S["voice_speak"] = ans
     S["voice_q"] = ""
@@ -623,6 +630,7 @@ def say(text, lang):
 
 def clear_voice():
     S["voice_log"] = []
+    S["voice_ai_history"] = []
 
 
 # ================================================================== compiler glue
@@ -1228,6 +1236,72 @@ def page_map():
     speak(f"Stage {i + 1}, {w[0]}. {w[2]} Compiler role: {w[3]}")
 
 
+def handle_floating_voice():
+    q = (S.get("floating_voice_q") or "").strip()
+    if not q:
+        return
+    answer = local_intent(q)
+    source = "Built-in"
+    if answer is None:
+        answer = ask_claude(q)
+        source = "AI"
+        S["voice_ai_history"].append((q, answer))
+        S["voice_ai_history"] = S["voice_ai_history"][-8:]
+    S["voice_log"].append((q, answer, source))
+    S["voice_log"] = S["voice_log"][-30:]
+    S["floating_voice_speak"] = answer
+    S["floating_voice_q"] = ""
+
+
+@st.dialog("🎙️ ClinicFlow Voice Assistant", width="large")
+def floating_voice_dialog():
+    st.write("Ask a question by voice or text. The assistant is available from every page.")
+    lang_name = st.selectbox(
+        "Voice language", list(VOICE_LANGS), key="floating_voice_lang"
+    )
+    lang = VOICE_LANGS[lang_name]
+    mic_html = MIC_HTML.replace(
+        'input[aria-label="Voice question"]',
+        'input[aria-label="Ask ClinicFlow"]'
+    )
+    components.html(mic_html.replace("__LANG__", lang), height=150)
+    st.text_input(
+        "Ask ClinicFlow",
+        key="floating_voice_q",
+        on_change=handle_floating_voice,
+        placeholder="Speak or type your question and press Enter"
+    )
+    answer_to_speak = S.pop("floating_voice_speak", None)
+    if answer_to_speak:
+        say(answer_to_speak, lang)
+    for question, answer, source in reversed(S.get("voice_log", [])[-5:]):
+        st.markdown(f"**{source}:** {answer}")
+        st.caption(f"You asked: {question}")
+
+
+def render_floating_voice_button():
+    st.markdown("""
+    <style>
+    div[class*="st-key-clinicflow_float_launcher"] {
+        position: fixed !important; right: 24px !important; bottom: 24px !important;
+        z-index: 999999 !important; width: 66px !important;
+    }
+    div[class*="st-key-clinicflow_float_launcher"] button {
+        width: 62px !important; height: 62px !important; min-height: 62px !important;
+        border-radius: 50% !important; background: #0E9AA7 !important;
+        color: white !important; border: 3px solid white !important;
+        box-shadow: 0 5px 20px rgba(0,0,0,.30) !important; font-size: 26px !important;
+    }
+    div[class*="st-key-clinicflow_float_launcher"] button:hover {
+        background: #0F2A43 !important; transform: scale(1.06);
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    with st.container(key="clinicflow_float_launcher"):
+        if st.button("🎙️", key="open_floating_clinicflow", help="Open ClinicFlow Voice Assistant"):
+            floating_voice_dialog()
+
+
 def page_voice():
     head("ClinicFlow AI Voice", "Your multilingual AI assistant for hospital workflows and general knowledge, with live web search.")
     hint("Tap the microphone and speak naturally. ClinicFlow can answer general questions, search the web when needed, read demo hospital information, and speak its reply aloud.")
@@ -1249,6 +1323,15 @@ def page_voice():
                "“Turn on high contrast”, “Why is the sky blue?”, “Explain hypertension in simple words.”")
 
 
-{PAGES[0]: page_cc, PAGES[1]: page_register, PAGES[2]: page_depts,
- PAGES[3]: page_patient, PAGES[4]: page_studio, PAGES[5]: page_map,
- PAGES[6]: page_voice}[S["page"]]()
+PAGE_RENDERERS = {
+    PAGES[0]: page_cc,
+    PAGES[1]: page_register,
+    PAGES[2]: page_depts,
+    PAGES[3]: page_patient,
+    PAGES[4]: page_studio,
+    PAGES[5]: page_map,
+    PAGES[6]: page_voice,
+}
+
+PAGE_RENDERERS[S["page"]]()
+render_floating_voice_button()
