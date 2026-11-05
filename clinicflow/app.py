@@ -1,5 +1,6 @@
 import html as _html
 import json
+import os
 import re
 import time
 
@@ -14,7 +15,7 @@ from clinicc.semantic import DRUG_MAX
 st.set_page_config(page_title="ClinicFlow · Hospital Command Center", page_icon="🏥", layout="wide")
 
 PAGES = ["🏥 Command Center", "🧾 Patient Registration", "🏢 Departments",
-         "🧑‍⚕️ Patient Workflow", "🧬 Protocol Studio", "🗺 Workflow Map"]
+         "🧑‍⚕️ Patient Workflow", "🧬 Protocol Studio", "🗺 Workflow Map", "🎙 Voice Assistant"]
 S = st.session_state
 for k, v in {"scale": 100, "spacing": 1.6, "contrast": False, "dyslexic": False, "calm": False,
              "plain": False, "intro_done": False, "page": PAGES[0]}.items():
@@ -115,6 +116,7 @@ S.setdefault("held", set())
 S.setdefault("done", set())
 S.setdefault("dept", "Emergency")
 S.setdefault("sb_src", SAMPLES["Broken program (see errors)"])
+S.setdefault("voice_log", [])
 
 # ================================================================== styling
 CSS = """
@@ -390,6 +392,187 @@ def speak(text):
       }};
       document.getElementById('s').onclick = () => speechSynthesis.cancel();
     </script>""", height=56)
+
+
+# ================================================================== voice assistant
+VOICE_MODEL = "claude-sonnet-5-5"
+VOICE_LANGS = {"English (India)": "en-IN", "English (US)": "en-US", "தமிழ் (Tamil)": "ta-IN",
+               "हिन्दी (Hindi)": "hi-IN", "తెలుగు (Telugu)": "te-IN"}
+
+MIC_HTML = """
+<style>
+ body{font-family:Inter,sans-serif;margin:0}
+ #mic{font-size:18px;font-weight:700;padding:12px 22px;border-radius:14px;border:2px solid #0e9aa7;
+      background:#0f2a43;color:#fff;cursor:pointer}
+ #mic.on{background:#c62828;border-color:#c62828;animation:p 1s infinite}
+ #mic:focus-visible{outline:3px solid #0e9aa7;outline-offset:2px}
+ #st{margin:.6rem 0 .3rem;font-weight:600;color:#12263a}
+ #tx{min-height:2.2rem;padding:.5rem .8rem;border:2px dashed #9fb3c2;border-radius:10px;color:#12263a;background:#fff}
+ @keyframes p{50%{transform:scale(1.06)}}
+</style>
+<button id="mic" aria-label="Start or stop listening">🎤 Tap and speak</button>
+<div id="st" role="status" aria-live="polite">Ready</div>
+<div id="tx" aria-live="polite"></div>
+<script>
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const btn = document.getElementById('mic'), st = document.getElementById('st'), tx = document.getElementById('tx');
+
+function sendToStreamlit(text){
+  const doc = window.parent.document;
+  const inp = doc.querySelector('input[aria-label="Voice question"]');
+  if(!inp){ st.textContent = "Could not find the question box. Type your question instead."; return; }
+  const setter = Object.getOwnPropertyDescriptor(window.parent.HTMLInputElement.prototype, 'value').set;
+  inp.focus();
+  setter.call(inp, text);
+  inp.dispatchEvent(new Event('input', {bubbles:true}));
+  inp.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', code:'Enter', keyCode:13, which:13, bubbles:true}));
+  st.textContent = "Thinking…";
+}
+
+if(!SR){
+  st.textContent = "Speech recognition is not supported here. Use Chrome or Edge, or type your question.";
+  btn.disabled = true;
+}else{
+  const rec = new SR();
+  rec.lang = "__LANG__"; rec.interimResults = true; rec.continuous = false;
+  let listening = false, finalText = "";
+  btn.onclick = () => {
+    if(listening){ rec.stop(); return; }
+    try{ window.parent.speechSynthesis.cancel(); }catch(e){}
+    finalText = ""; tx.textContent = "";
+    try{ rec.start(); }catch(e){}
+  };
+  rec.onstart = () => { listening = true; btn.classList.add('on'); btn.textContent = "⏹ Listening… tap to stop"; st.textContent = "Listening"; };
+  rec.onresult = (e) => {
+    let interim = "";
+    for(let i = e.resultIndex; i < e.results.length; i++){
+      const r = e.results[i];
+      if(r.isFinal) finalText += r[0].transcript; else interim += r[0].transcript;
+    }
+    tx.textContent = finalText + interim;
+  };
+  rec.onerror = (e) => { st.textContent = "Microphone error: " + e.error + ". Allow microphone access in the browser."; };
+  rec.onend = () => {
+    listening = false; btn.classList.remove('on'); btn.textContent = "🎤 Tap and speak";
+    if(finalText.trim()) sendToStreamlit(finalText.trim());
+    else if(st.textContent === "Listening") st.textContent = "I did not hear anything. Try again.";
+  };
+}
+</script>
+"""
+
+NAV_WORDS = [("patient workflow", 3), ("workflow map", 5), ("command center", 0), ("dashboard", 0),
+             ("registration", 1), ("register", 1), ("department", 2), ("protocol", 4),
+             ("studio", 4), ("map", 5), ("voice", 6)]
+
+
+def local_intent(q):
+    """Hospital commands answered offline. Returns text, or None if not a built-in command."""
+    t = q.lower().strip()
+    if re.search(r"\b(open|go to|show|take me to|navigate)\b", t):
+        for word, i in NAV_WORDS:
+            if word in t:
+                S["page"] = PAGES[i]
+                name = re.sub(r"^\W+", "", PAGES[i])
+                return f"Opening {name}."
+    if "high contrast" in t:
+        S["contrast"] = "off" not in t
+        return "High contrast is now " + ("off." if "off" in t else "on.")
+    if "reduce motion" in t or "calm mode" in t:
+        S["calm"] = "off" not in t
+        return "Reduced motion is now " + ("off." if "off" in t else "on.")
+    if re.search(r"(bigger|larger|increase).*(text|font)", t):
+        S["scale"] = min(160, S["scale"] + 10)
+        return f"Text size is now {S['scale']} percent."
+    if re.search(r"(smaller|decrease|reduce).*(text|font)", t):
+        S["scale"] = max(80, S["scale"] - 10)
+        return f"Text size is now {S['scale']} percent."
+
+    m = re.search(r"p-?\s?(\d{4})", t)
+    if m and (p := byid(f"P-{m.group(1)}")):
+        v = p["v"]
+        return (f"{p['id']}, {p['name']}, {v['age']:g} years, {p['complaint']}, {p['priority']} priority in {p['dept']}. "
+                f"Blood pressure {v['bp_sys']:g} over {v['bp_dia']:g}, heart rate {v['hr']:g}, "
+                f"oxygen {v['spo2']:g} percent, temperature {v['temp']:g} degrees, glucose {v['glucose']:g}. "
+                f"Allergies: {p['allergies']}.")
+    if re.search(r"how many patients|number of patients", t):
+        return f"There are {len(S['patients'])} patients registered."
+    if "critical" in t and "patient" in t:
+        c = [p for p in S["patients"] if p["priority"] == "Critical"]
+        return (f"{len(c)} critical patients: " + ", ".join(f"{p['id']} with {p['complaint']}" for p in c) + ".") if c \
+            else "There are no critical patients."
+    if re.search(r"open tasks|pending tasks", t):
+        tasks = build_tasks(results())
+        return f"There are {sum(x['released'] and not x['done'] for x in tasks)} open tasks across all departments."
+    if "alert" in t:
+        al = [x for x in build_tasks(results()) if x["kind"] == "ALERT" and x["released"]]
+        return ("Active alerts: " + "; ".join(f"{x['pid']} {x['dept']}, {x['detail']}" for x in al[:5]) + ".") if al \
+            else "There are no active alerts."
+    return None
+
+
+def ask_claude(q):
+    key = os.environ.get("ANTHROPIC_API_KEY")
+    if not key:
+        try:
+            key = st.secrets["ANTHROPIC_API_KEY"]
+        except Exception:
+            key = None
+    if not key:
+        return ("I can run hospital commands offline, but general questions need an Anthropic API key. "
+                "Add ANTHROPIC_API_KEY to your secrets file.")
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=key)
+        hist = []
+        for q0, a0, _ in S["voice_log"][-6:]:
+            hist += [{"role": "user", "content": q0}, {"role": "assistant", "content": a0}]
+        crit = sum(p["priority"] == "Critical" for p in S["patients"])
+        system = ("You are ClinicFlow Voice, a friendly voice assistant inside a hospital command-center app. "
+                  "Answer any question accurately and helpfully. Your reply will be read aloud, so use 1 to 4 short "
+                  "spoken sentences, with no markdown, lists, or symbols. Reply in the same language the user spoke. "
+                  "For medical questions give general information and suggest confirming with a clinician; "
+                  "never give a personal diagnosis or dose. If you are unsure, say so. "
+                  f"App context: {len(S['patients'])} patients registered, {crit} critical.")
+        r = client.messages.create(
+            model=VOICE_MODEL, max_tokens=500, system=system,
+            messages=hist + [{"role": "user", "content": q}],
+            # Optional, for live facts (news, weather, scores):
+            # tools=[{"type": "web_search_20250305", "name": "web_search"}],
+        )
+        return "".join(b.text for b in r.content if b.type == "text").strip() or "I could not form an answer."
+    except Exception as e:
+        return f"Sorry, I could not reach the AI service ({type(e).__name__})."
+
+
+def handle_voice():
+    q = (S.get("voice_q") or "").strip()
+    if not q:
+        return
+    ans = local_intent(q)
+    src = "Built-in"
+    if ans is None:
+        ans, src = ask_claude(q), "AI"
+    S["voice_log"].append((q, ans, src))
+    S["voice_speak"] = ans
+    S["voice_q"] = ""
+
+
+def say(text, lang):
+    """Speak automatically through the parent page (the mic tap already gave permission)."""
+    safe = json.dumps(text).replace("</", "<\\/")
+    components.html(f"""<script>
+      // {time.time()}
+      try {{
+        const w = window.parent; w.speechSynthesis.cancel();
+        const u = new w.SpeechSynthesisUtterance({safe}); u.lang = "{lang}"; u.rate = 0.97;
+        w.speechSynthesis.speak(u);
+      }} catch (e) {{}}
+    </script>""", height=0)
+
+
+def clear_voice():
+    S["voice_log"] = []
 
 
 # ================================================================== compiler glue
@@ -995,5 +1178,27 @@ def page_map():
     speak(f"Stage {i + 1}, {w[0]}. {w[2]} Compiler role: {w[3]}")
 
 
+def page_voice():
+    head("Voice Assistant", "Speak or type. Ask for hospital information, navigate the app, or ask anything at all.")
+    hint("Tap the microphone, speak your question, and the answer is read back to you. Say 'open departments' to move around.")
+    lang_name = st.selectbox("Voice language", list(VOICE_LANGS), key="voice_lang_name")
+    lang = VOICE_LANGS[lang_name]
+    components.html(MIC_HTML.replace("__LANG__", lang), height=190)
+    st.text_input("Voice question", key="voice_q", on_change=handle_voice,
+                  placeholder="Speak with the microphone above, or type here and press Enter")
+    to_say = S.pop("voice_speak", None)
+    if to_say:
+        say(to_say, lang)
+    for q, a, src in reversed(S["voice_log"][-8:]):
+        html(f'<div class="card"><span class="tag">{esc(src.upper())}</span><p><b>You:</b> {esc(q)}</p>'
+             f'<p><b>ClinicFlow:</b> {esc(a)}</p></div>')
+    if S["voice_log"]:
+        speak(S["voice_log"][-1][1])      # manual 🔊 button in case the browser blocks auto-speech
+        st.button("🧹 Clear conversation", on_click=clear_voice)
+    st.caption("Examples: “How many critical patients?”, “Tell me about P-1042”, “Open protocol studio”, "
+               "“Turn on high contrast”, “Why is the sky blue?”, “Explain hypertension in simple words.”")
+
+
 {PAGES[0]: page_cc, PAGES[1]: page_register, PAGES[2]: page_depts,
- PAGES[3]: page_patient, PAGES[4]: page_studio, PAGES[5]: page_map}[S["page"]]()
+ PAGES[3]: page_patient, PAGES[4]: page_studio, PAGES[5]: page_map,
+ PAGES[6]: page_voice}[S["page"]]()
