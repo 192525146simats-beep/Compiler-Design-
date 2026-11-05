@@ -6,7 +6,8 @@ from .optimizer import optimize
 from .codegen import to_assembly, to_python, execute, to_orders_json
 
 
-def compile_source(src: str) -> dict:
+def compile_source(src: str, enabled=None) -> dict:
+    """enabled: which optimizations to run (None = all)."""
     tokens, lex_errors = tokenize(src)
     parser = Parser(tokens)
     ast = parser.parse()
@@ -18,7 +19,7 @@ def compile_source(src: str) -> dict:
     if r["sem"]["errors"]:
         return r
     r["ir"] = IRGen().generate(ast)
-    r["opt"], r["log"], r["stats"] = optimize(r["ir"])
+    r["opt"], r["log"], r["stats"] = optimize(r["ir"], enabled)
     r["asm"] = to_assembly(r["opt"])
     r["py"] = to_python(r["opt"])
     r["run_raw"] = execute(r["ir"])
