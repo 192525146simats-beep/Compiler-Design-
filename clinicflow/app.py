@@ -1,6 +1,7 @@
 import html as _html
 import json
 import re
+import time
 
 import pandas as pd
 import streamlit as st
@@ -240,6 +241,18 @@ div[data-baseweb="textarea"],div[data-baseweb="base-input"]{background:var(--car
 .intro li:nth-child(1){animation-delay:.8s}.intro li:nth-child(2){animation-delay:1.5s}.intro li:nth-child(3){animation-delay:2.2s}.intro li:nth-child(4){animation-delay:2.9s}
 .intro .pbar{width:min(360px,80vw);height:8px;background:#ffffff33;border-radius:8px;overflow:hidden}
 .intro .pbar span{display:block;height:100%;background:#2fd3df;width:0;animation:fillp 4.2s linear forwards}
+.splash{min-height:78vh;background:#0f2a43;border-radius:28px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;text-align:center;padding:2rem;margin-top:1rem}
+.splash .mark{font-size:3rem;font-weight:700;background:#0e9aa7;color:#fff;border-radius:18px;width:84px;height:84px;display:grid;place-items:center;animation:beat 1.2s ease-in-out infinite}
+.splash h2{font-size:2.8rem;margin:0;color:#e8f1f7!important;animation:rise .8s .3s both}
+.splash p{margin:0;color:#e8f1f7!important;animation:rise .8s .5s both}
+.splash svg{width:min(640px,90%);height:70px}
+.splash svg path{fill:none;stroke:#2fd3df;stroke-width:3;vector-effect:non-scaling-stroke;stroke-dasharray:1400;stroke-dashoffset:1400;animation:trace 2.6s linear forwards;filter:drop-shadow(0 0 6px #2fd3df)}
+.splash ul{list-style:none;padding:0;margin:0;text-align:left;font:600 .95rem 'JetBrains Mono',monospace}
+.splash li{opacity:0;color:#e8f1f7!important;animation:rise .5s both}
+.splash li::before{content:"✔ ";color:#2fd3df}
+.splash li:nth-child(1){animation-delay:.8s}.splash li:nth-child(2){animation-delay:1.5s}.splash li:nth-child(3){animation-delay:2.2s}.splash li:nth-child(4){animation-delay:2.9s}
+.splash .pbar{width:min(360px,80%);height:8px;background:#ffffff33;border-radius:8px;overflow:hidden}
+.splash .pbar span{display:block;height:100%;background:#2fd3df;width:0;animation:fillp 4.2s linear forwards}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 @keyframes rise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 @keyframes slide{from{opacity:0;transform:translateX(-18px)}to{opacity:1;transform:none}}
@@ -295,16 +308,20 @@ ECG = ("M0 40 L120 40 L140 40 L150 12 L162 56 L174 4 L186 40 L320 40 L340 40 L35
        "L386 40 L520 40 L540 40 L550 12 L562 56 L574 4 L586 40 L720 40 L740 40 L750 12 L762 56 L774 4 L786 40 L900 40")
 
 
-def intro():
-    if S["intro_done"] or S["calm"]:
-        return
-    S["intro_done"] = True
-    html(f"""<div class="intro" aria-hidden="true">
+def splash():
+    html(f"""<div class="splash">
       <div class="mark">+</div><h2>ClinicFlow</h2>
       <p>Hospital-wide workflow automation, powered by compiler technology</p>
-      <svg viewBox="0 0 900 60" preserveAspectRatio="none"><path d="{ECG}"/></svg>
+      <svg viewBox="0 0 900 60" preserveAspectRatio="none" aria-hidden="true"><path d="{ECG}"/></svg>
       <ul><li>Registering patients</li><li>Checking safety rules</li><li>Optimizing department workflows</li><li>Generating orders</li></ul>
       <div class="pbar"><span></span></div></div>""")
+    time.sleep(4.5)
+    S["intro_done"] = True
+    st.rerun()
+
+
+def intro():
+    pass
 
 
 # ================================================================== UI helpers
@@ -578,7 +595,9 @@ with st.sidebar:
     st.caption("Tab and Shift+Tab move between controls. Enter or Space activates them.")
 
 inject_css()
-intro()
+if not S["intro_done"] and not S["calm"]:
+    splash()
+    st.stop()
 html('<div id="main" tabindex="-1"></div>')
 
 
