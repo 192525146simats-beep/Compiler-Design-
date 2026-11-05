@@ -395,7 +395,7 @@ def speak(text):
 
 
 # ================================================================== voice assistant
-VOICE_MODEL = "claude-sonnet-5-5"
+VOICE_MODEL = os.getenv("OPENAI_MODEL", "gpt-6-astra")
 VOICE_LANGS = {"English (India)": "en-IN", "English (US)": "en-US", "தமிழ் (Tamil)": "ta-IN",
                "हिन्दी (Hindi)": "hi-IN", "తెలుగు (Telugu)": "te-IN"}
 
@@ -512,37 +512,87 @@ def local_intent(q):
 
 
 def ask_claude(q):
-    key = os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
+    """
+    General-purpose ClinicFlow AI using OpenAI Responses API and live web search.
+    The function name is retained so the rest of the original app remains compatible.
+    """
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
         try:
-            key = st.secrets["ANTHROPIC_API_KEY"]
+            api_key = st.secrets["OPENAI_API_KEY"]
         except Exception:
-            key = None
-    if not key:
-        return ("I can run hospital commands offline, but general questions need an Anthropic API key. "
-                "Add ANTHROPIC_API_KEY to your secrets file.")
-    try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=key)
-        hist = []
-        for q0, a0, _ in S["voice_log"][-6:]:
-            hist += [{"role": "user", "content": q0}, {"role": "assistant", "content": a0}]
-        crit = sum(p["priority"] == "Critical" for p in S["patients"])
-        system = ("You are ClinicFlow Voice, a friendly voice assistant inside a hospital command-center app. "
-                  "Answer any question accurately and helpfully. Your reply will be read aloud, so use 1 to 4 short "
-                  "spoken sentences, with no markdown, lists, or symbols. Reply in the same language the user spoke. "
-                  "For medical questions give general information and suggest confirming with a clinician; "
-                  "never give a personal diagnosis or dose. If you are unsure, say so. "
-                  f"App context: {len(S['patients'])} patients registered, {crit} critical.")
-        r = client.messages.create(
-            model=VOICE_MODEL, max_tokens=500, system=system,
-            messages=hist + [{"role": "user", "content": q}],
-            # Optional, for live facts (news, weather, scores):
-            # tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            api_key = None
+
+    if not api_key:
+        return (
+            "The general AI assistant is not configured yet. "
+            "Add your OPENAI_API_KEY to the Streamlit secrets file or environment."
         )
-        return "".join(b.text for b in r.content if b.type == "text").strip() or "I could not form an answer."
-    except Exception as e:
-        return f"Sorry, I could not reach the AI service ({type(e).__name__})."
+
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=api_key, timeout=60.0, max_retries=2)
+
+        history = []
+        for old_q, old_a, _ in S["voice_log"][-6:]:
+            history.append({"role": "user", "content": old_q})
+            history.append({"role": "assistant", "content": old_a})
+
+        critical_count = sum(
+            patient["priority"] == "Critical" for patient in S["patients"]
+        )
+        open_tasks = sum(
+            task["released"] and not task["done"]
+            for task in build_tasks(results())
+        )
+
+        language_name = S.get("voice_lang_name", "English (India)")
+        instructions = (
+            "You are ClinicFlow AI Voice, a friendly general-purpose assistant "
+            "inside a hospital workflow demonstration application. Answer questions "
+            "across general knowledge, science, technology, education, programming, "
+            "mathematics, history, language, and daily life. Use web search when "
+            "information may be current, changing, local, or when the user asks for "
+            "sources or latest information. Do not pretend you searched if you did not. "
+            "Be honest about uncertainty and distinguish facts from estimates. "
+            "The selected speech language is " + language_name + ". Reply in the "
+            "language used by the user and use natural spoken wording, normally "
+            "2 to 6 sentences. Avoid Markdown tables because answers are spoken. "
+            "For medical topics, provide general educational information only. "
+            "Do not diagnose, prescribe, recommend a patient-specific dose, or "
+            "replace a licensed clinician. For emergencies, advise contacting local "
+            "emergency services and a qualified clinician. Never treat demo patient "
+            "records as real clinical records or execute clinical orders. "
+            "For questions about this app, use the supplied app context. "
+            f"Current demo context: {len(S['patients'])} registered patients, "
+            f"{critical_count} marked Critical, and {open_tasks} open workflow tasks."
+        )
+
+        response = client.responses.create(
+            model=VOICE_MODEL,
+            instructions=instructions,
+            tools=[{"type": "web_search"}],
+            tool_choice="auto",
+            input=history + [{"role": "user", "content": q}],
+            max_output_tokens=700,
+        )
+
+        answer = (response.output_text or "").strip()
+        return answer or "I could not prepare an answer. Please try asking another way."
+
+    except ImportError:
+        return (
+            "The OpenAI Python package is missing. "
+            "Install it by running pip install --upgrade openai."
+        )
+    except Exception as error:
+        # Do not expose API keys, request headers, or raw exception details.
+        return (
+            "Sorry, I could not reach the AI service. "
+            f"The error type was {type(error).__name__}. Check your internet "
+            "connection, API key, API billing, and configured model."
+        )
 
 
 def handle_voice():
@@ -1179,8 +1229,8 @@ def page_map():
 
 
 def page_voice():
-    head("Voice Assistant", "Speak or type. Ask for hospital information, navigate the app, or ask anything at all.")
-    hint("Tap the microphone, speak your question, and the answer is read back to you. Say 'open departments' to move around.")
+    head("ClinicFlow AI Voice", "Your multilingual AI assistant for hospital workflows and general knowledge, with live web search.")
+    hint("Tap the microphone and speak naturally. ClinicFlow can answer general questions, search the web when needed, read demo hospital information, and speak its reply aloud.")
     lang_name = st.selectbox("Voice language", list(VOICE_LANGS), key="voice_lang_name")
     lang = VOICE_LANGS[lang_name]
     components.html(MIC_HTML.replace("__LANG__", lang), height=190)
