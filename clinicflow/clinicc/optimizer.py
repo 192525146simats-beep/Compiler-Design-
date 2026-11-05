@@ -143,18 +143,25 @@ def _duplicates(code, log):
             seen.add(key)
         out.append(i)
     return out
+PASS_KEYS = ("fold", "branch", "dead", "dup")
 
 
-def optimize(code):
+def optimize(code, enabled=None):
+    """enabled: which optimizations to run (None = all)."""
+    enabled = set(PASS_KEYS) if enabled is None else set(enabled)
     log, cur, passes = [], list(code), 0
     for _ in range(10):
         prev = cur
-        cur = _propagate(cur, log)
-        cur = _branches(cur, log)
-        cur = _unreachable(cur, log)
-        cur = _tidy_jumps(cur, log)
-        cur = _dead_code(cur, log)
-        cur = _duplicates(cur, log)
+        if "fold" in enabled:
+            cur = _propagate(cur, log)
+        if "branch" in enabled:
+            cur = _branches(cur, log)
+            cur = _unreachable(cur, log)
+            cur = _tidy_jumps(cur, log)
+        if "dead" in enabled:
+            cur = _dead_code(cur, log)
+        if "dup" in enabled:
+            cur = _duplicates(cur, log)
         passes += 1
         if cur == prev:
             break
