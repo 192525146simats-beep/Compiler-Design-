@@ -1,1 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ClinicFlow · Hospital Command Center</title>
+<meta name="description" content="Clinical workflow automation powered by compiler technology.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<div id="live" class="sr" aria-live="polite"></div>
 
+<div id="intro" role="dialog" aria-modal="true" aria-label="ClinicFlow introduction">
+  <div class="mark" aria-hidden="true">+</div>
+  <h2>ClinicFlow</h2>
+  <p>Clinical workflow automation, powered by compiler technology</p>
+  <svg viewBox="0 0 900 60" preserveAspectRatio="none" aria-hidden="true"><path d="M0 40 L120 40 L140 40 L150 12 L162 56 L174 4 L186 40 L320 40 L340 40 L350 12 L362 56 L374 4 L386 40 L520 40 L540 40 L550 12 L562 56 L574 4 L586 40 L720 40 L740 40 L750 12 L762 56 L774 4 L786 40 L900 40"/></svg>
+  <ul aria-label="Startup steps"><li>Reading clinical protocol</li><li>Checking safety rules</li><li>Optimizing workflow</li><li>Generating orders</li></ul>
+  <div class="pbar" aria-hidden="true"><span></span></div>
+  <button id="skip" class="introbtn">Skip intro (Esc)</button>
+</div>
+
+<div class="app">
+<aside>
+  <div class="logo"><i>+</i>ClinicFlow</div>
+  <div class="sub">CITYCARE HOSPITAL · AUTOMATION</div>
+  <nav aria-label="Pages" id="nav">
+    <button data-p="cc" aria-current="page">🏥 Command Center</button>
+    <button data-p="pt">🧑‍⚕️ Patient Workflow</button>
+    <button data-p="ps">🧬 Protocol Studio</button>
+    <button data-p="fw">🗺 Workflow Map</button>
+    <button data-p="lc">⚙ Live Compiler</button>
+  </nav>
+  <div class="a11y" role="group" aria-label="Accessibility settings">
+    <strong>♿ Accessibility</strong><br>
+    <button id="b-minus" aria-label="Decrease text size">A−</button>
+    <button id="b-plus" aria-label="Increase text size">A+</button>
+    <button id="b-hc" aria-pressed="false">High contrast</button>
+    <button id="b-dys" aria-pressed="false">Dyslexia font</button>
+    <button id="b-calm" aria-pressed="false">Reduce motion</button>
+    <button id="b-read" aria-pressed="false">🔊 Read page</button>
+    <button id="b-replay">▶ Replay intro</button>
+  </div>
+</aside>
+
+<div>
+<div class="top">
+  <h1 id="ttl">Hospital Command Center</h1>
+  <span><span class="pill"><span class="dot" aria-hidden="true"></span>Workflow engine online</span> &nbsp;<span class="mut">Demo data</span></span>
+</div>
+<main id="main" tabindex="-1">
+
+<section data-s="cc">
+  <h2>Command Center</h2><p class="mut">Live view of the emergency department, wards and automated workflows.</p>
+  <div class="grid">
+    <div class="card kpi"><div class="l">Patients in ED</div><div class="v">42</div><div class="s">8 waiting for triage</div></div>
+    <div class="card kpi"><div class="l">Critical alerts</div><div class="v">5</div><div class="s">2 need review now</div></div>
+    <div class="card kpi"><div class="l">Avg triage time</div><div class="v">4.2m</div><div class="s">down from 11 min manual</div></div>
+    <div class="card kpi"><div class="l">Orders automated</div><div class="v">128</div><div class="s">today, all clinician-approved</div></div>
+  </div>
+  <div class="two">
+    <div class="card"><h3>Triage queue</h3><div class="wrap"><table>
+      <tr><th>ID</th><th>Patient</th><th>Complaint</th><th>Priority</th><th>Wait</th></tr>
+      <tr><td>P-1042</td><td>R.K., 67</td><td>Chest pain</td><td><span class="badge b-c">▲ CRITICAL</span></td><td>2 min</td></tr>
+      <tr><td>P-1043</td><td>S.M., 54</td><td>High glucose</td><td><span class="badge b-u">● URGENT</span></td><td>9 min</td></tr>
+      <tr><td>P-1044</td><td>A.D., 31</td><td>Fever</td><td><span class="badge b-s">■ STANDARD</span></td><td>18 min</td></tr>
+      <tr><td>P-1045</td><td>L.T., 72</td><td>Low oxygen</td><td><span class="badge b-c">▲ CRITICAL</span></td><td>3 min</td></tr>
+      <tr><td>P-1046</td><td>N.P., 26</td><td>Sprained ankle</td><td><span class="badge b-s">■ STANDARD</span></td><td>34 min</td></tr></table></div></div>
+    <div class="card"><h3>Live alerts</h3><ul class="feed" aria-live="polite">
+      <li class="c"><b>▲ P-1042</b> Hypertension detected. ECG and Troponin ordered.</li>
+      <li class="c"><b>▲ P-1045</b> Low oxygen saturation. Chest X-ray ordered.</li>
+      <li class="u"><b>● P-1043</b> Poor glycaemic control. Insulin dose proposed.</li>
+      <li><b>✔ Pharmacy</b> Duplicate order blocked automatically.</li></ul></div>
+  </div>
+  <div class="card" style="margin-top:1rem"><h3>Bed occupancy</h3>
+    <div>ICU · 18 of 20</div><div class="bar" role="img" aria-label="ICU 90 percent"><span style="--w:90%"></span></div>
+    <div>Emergency · 42 of 50</div><div class="bar" role="img" aria-label="Emergency 84 percent"><span style="--w:84%"></span></div>
+    <div>Cardiology · 26 of 40</div><div class="bar" role="img" aria-label="Cardiology 65 percent"><span style="--w:65%"></span></div>
+    <div>General ward · 88 of 120</div><div class="bar" role="img" aria-label="General ward 73 percent"><span style="--w:73%"></span></div></div>
+</section>
+
+<section data-s="pt" hidden>
+  <h2>Patient Workflow · P-1042</h2><p class="mut">R.K., 67 · Emergency · Chest pain · Protocol: Cardiac triage v3</p>
+  <div class="card"><h3>Vitals</h3><div class="vit">
+    <div>BP<b>165/98</b><span class="badge b-c">▲ HIGH</span></div><div>Heart rate<b>112</b><span class="badge b-u">● HIGH</span></div>
+    <div>SpO₂<b>91%</b><span class="badge b-c">▼ LOW</span></div><div>Temp<b>38.9°C</b><span class="badge b-u">● FEVER</span></div></div></div>
+  <div class="two" style="margin-top:1rem">
+    <div class="card"><h3>Automated workflow</h3><ol class="tl">
+      <li><b>08:02</b> Registered, vitals captured by monitor</li>
+      <li><b>08:03</b> Protocol compiled: 45 steps simplified to 7</li>
+      <li><b>08:03</b> Safety checks passed (ranges, dose limits)</li>
+      <li><b>08:04</b> Orders sent to lab, radiology and pharmacy</li>
+      <li><b>08:04</b> Nurse and doctor notified. Awaiting approval</li></ol></div>
+    <div class="card"><h3>Generated orders</h3><div class="wrap"><table>
+      <tr><th>Type</th><th>Detail</th><th>Routed to</th></tr>
+      <tr><td>⚠ Alert</td><td>Hypertension detected</td><td>Doctor</td></tr>
+      <tr><td>📋 Order</td><td>ECG</td><td>Cardiology</td></tr>
+      <tr><td>📋 Order</td><td>Troponin panel</td><td>Lab</td></tr>
+      <tr><td>⚠ Alert</td><td>Low oxygen saturation</td><td>Nurse</td></tr>
+      <tr><td>📋 Order</td><td>Chest X-ray</td><td>Radiology</td></tr>
+      <tr><td>💊 Rx</td><td>Paracetamol 500 mg</td><td>Pharmacy</td></tr></table></div>
+      <p class="mut">The duplicate ECG order was removed by the optimizer.</p></div>
+  </div>
+</section>
+
+<section data-s="ps" hidden>
+  <h2>Protocol Studio</h2><p class="mut">Clinicians write rules in plain, structured text. The compiler turns them into safe, optimized workflows.</p>
+  <label for="src"><strong>Protocol: Cardiac triage v3</strong></label>
+  <textarea id="src" rows="10" spellcheck="false">if bp_sys > 140 and bp_dia > 90 then {
+    alert "Hypertension detected";
+    order "ECG";
+    order "ECG";
+}
+if spo2 < 94 then {
+    order "Chest X-ray";
+}
+if temp >= 38.0 then {
+    prescribe "Paracetamol" 500 mg;
+}</textarea>
+  <div class="stages" id="stages" role="status" aria-label="Compilation stages">
+    <span class="st ok" id="s1">✔ Syntax check</span><span class="st ok">✔ Safety check</span>
+    <span class="st ok">✔ Optimized: 45 → 7 steps</span><span class="st ok">✔ Orders generated</span></div>
+  <p id="tokinfo" class="mut"></p>
+  <p class="mut">Behind the scenes: lexer, parser, semantic analysis, three-address code, optimizer and code generator.</p>
+</section>
+
+<section data-s="fw" hidden>
+  <h2>Workflow Map: how a next-gen clinical workflow is automated</h2>
+  <p class="mut">Select a stage. Each hospital step is powered by one compiler phase.</p>
+  <div class="flow" id="flow"></div>
+  <div class="card det" id="det" aria-live="polite"></div>
+  <div class="two" style="margin-top:1rem">
+    <div class="card"><h3>Today</h3><ul><li>Guidelines live in PDFs and memory</li><li>Staff re-enter the same orders</li><li>Duplicate tests and missed alerts</li><li>Rules differ between wards</li></ul></div>
+    <div class="card"><h3>Next-gen with a compiler</h3><ul><li>Guidelines become checked, versioned code</li><li>Unsafe doses are rejected before they reach a patient</li><li>Duplicates removed automatically</li><li>One protocol runs the same in every ward, with a full audit trail</li></ul></div>
+  </div>
+  <div class="grid">
+    <div class="card"><span class="tag">NOW</span><p>Rule-based triage and order sets from structured protocols (this project).</p></div>
+    <div class="card"><span class="tag">NEXT</span><p>Live data from monitors and the EHR. Clinician sign-off built in.</p></div>
+    <div class="card"><span class="tag">LATER</span><p>AI drafts protocols from guidelines. The compiler verifies them before use.</p></div>
+  </div>
+  <p class="mut">Academic prototype. A clinician always approves orders. Not a medical device.</p>
+</section>
+
+<section data-s="lc" hidden>
+  <h2>Live Compiler</h2>
+  <p class="mut">The full compiler (Streamlit). If it is asleep it wakes in about 30 seconds.
+    <a id="open-app" target="_blank" rel="noopener">Open in a new tab</a></p>
+  <div class="frame"><iframe id="app-frame" title="ClinicFlow Streamlit compiler application" loading="lazy"></iframe></div>
+</section>
+
+</main></div></div>
+<script src="app.js"></script>
+</body>
+</html>
