@@ -8,6 +8,7 @@ import streamlit.components.v1 as components
 
 from clinicc import compile_source, pretty, listing, rows, to_orders_json
 from clinicc.samples import SAMPLES
+from clinicc.semantic import DRUG_MAX
 
 st.set_page_config(page_title="ClinicFlow · Hospital Command Center", page_icon="🏥", layout="wide")
 
@@ -17,6 +18,42 @@ for k, v in {"scale": 100, "spacing": 1.6, "contrast": False, "dyslexic": False,
              "calm": False, "plain": False, "intro_done": False,
              "page": "🏥 Command Center"}.items():
     S.setdefault(k, v)
+
+# ------------------------------------------------------------------ default clinical data
+INPUT_ORDER = ["age", "weight", "bp_sys", "bp_dia", "hr", "spo2", "temp", "glucose"]
+DEFAULT_INPUTS = {"age": 67.0, "weight": 72.0, "bp_sys": 165.0, "bp_dia": 98.0,
+                  "hr": 112.0, "spo2": 91.0, "temp": 38.9, "glucose": 110.0}
+PATIENTS = {
+    "Chest pain · R.K., 67": DEFAULT_INPUTS,
+    "High glucose · S.M., 54": {"age": 54.0, "weight": 80.0, "bp_sys": 132.0, "bp_dia": 84.0,
+                                "hr": 88.0, "spo2": 97.0, "temp": 36.8, "glucose": 245.0},
+    "Routine check · A.D., 31": {"age": 31.0, "weight": 64.0, "bp_sys": 118.0, "bp_dia": 76.0,
+                                 "hr": 72.0, "spo2": 99.0, "temp": 36.6, "glucose": 92.0},
+}
+
+
+def mk(v1, op1, t1, typ, text="", drug="paracetamol", dose=500.0,
+       second=False, conn="and", v2="hr", op2=">", t2=100.0):
+    return {"v1": v1, "op1": op1, "t1": float(t1), "second": second, "conn": conn,
+            "v2": v2, "op2": op2, "t2": float(t2), "type": typ, "text": text,
+            "drug": drug, "dose": float(dose)}
+
+
+DEFAULT_RULES = [
+    mk("bp_sys", ">", 140, "Alert", "Hypertension detected", second=True, v2="bp_dia", op2=">", t2=90),
+    mk("bp_sys", ">", 140, "Order", "ECG", second=True, v2="bp_dia", op2=">", t2=90),
+    mk("bp_sys", ">", 140, "Order", "Troponin panel", second=True, v2="hr", op2=">", t2=100),
+    mk("spo2", "<", 94, "Alert", "Low oxygen saturation"),
+    mk("spo2", "<", 94, "Order", "Chest X-ray"),
+    mk("temp", ">=", 38, "Prescribe", drug="paracetamol", dose=500),
+    mk("bp_sys", ">", 160, "Order", "ECG"),   # a second pathway orders the same ECG
+]
+
+S.setdefault("inputs", dict(DEFAULT_INPUTS))
+S.setdefault("rules", [dict(r) for r in DEFAULT_RULES])
+S.setdefault("passes", ["fold", "branch", "dead", "dup"])
+S.setdefault("advanced", False)
+S.setdefault("adv_src", SAMPLES["Cardiac triage (demo)"])
 
 PAGES = ["🏥 Command Center", "🧑‍⚕️ Patient Workflow", "🧬 Protocol Studio", "🗺 Workflow Map"]
 esc = _html.escape
@@ -110,6 +147,14 @@ div[data-baseweb="textarea"],div[data-baseweb="base-input"]{background:var(--car
 @keyframes fillp{to{width:100%}}
 @keyframes count{from{--n:0}to{--n:var(--to)}}
 @keyframes introOut{to{opacity:0;visibility:hidden}}
+.sec{border-left:8px solid var(--ac);margin-top:1.4rem}
+.rule{background:var(--card);color:var(--fg);border:2px solid var(--ln);border-radius:12px;padding:.5rem .9rem;margin:.3rem 0}
+.how{display:flex;flex-wrap:wrap;gap:.6rem;margin:.6rem 0}
+.how div{flex:1 1 220px;background:var(--card);color:var(--fg);border:2px solid var(--ln);border-radius:14px;padding:.7rem 1rem;animation:glow 8s infinite}
+.how div:nth-child(2){animation-delay:2.5s}.how div:nth-child(3){animation-delay:5s}
+.how b{display:block;color:var(--fg)}
+.how small{font:700 .68rem 'JetBrains Mono',monospace;letter-spacing:.1em;color:var(--ac)}
+@keyframes glow{0%,12%,100%{box-shadow:none}6%{box-shadow:0 0 0 3px var(--ac)}}
 __CALM__
 """
 
@@ -192,19 +237,129 @@ def speak(text):
     </script>""", height=56)
 
 
-def load_sample():
-    text = SAMPLES[S["sample_pick"]]
-    S["src"] = text
-    S["editor"] = text
+# ---- forms -> ClinicalScript
+RULE_VITALS = {"bp_sys": "Systolic BP", "bp_dia": "Diastolic BP", "hr": "Heart rate", "spo2": "SpO₂",
+               "temp": "Temperature", "glucose": "Glucose", "age": "Age", "weight": "Weight"}
+OPS = [">", "<", ">=", "<=", "=="]
+PASS_LABELS = {"fold": "Constant propagation and folding",
+               "branch": "Branch folding and unreachable-code removal",
+               "dead": "Dead-code elimination",
+               "dup": "Duplicate-order removal"}
+FIELDS = {"age": ("Age (years)", 0, 120, 1.0, "%.0f"), "weight": ("Weight (kg)", 1, 400, 1.0, "%.0f"),
+          "bp_sys": ("Systolic BP (mmHg)", 40, 300, 1.0, "%.0f"), "bp_dia": ("Diastolic BP (mmHg)", 20, 200, 1.0, "%.0f"),
+          "hr": ("Heart rate (bpm)", 20, 250, 1.0, "%.0f"), "spo2": ("SpO₂ (%)", 0, 100, 1.0, "%.0f"),
+          "temp": ("Temperature (°C)", 30, 45, 0.1, "%.1f"), "glucose": ("Glucose (mg/dL)", 20, 800, 1.0, "%.0f")}
+
+
+def safe_text(t):
+    return re.sub(r'["\r\n]', " ", t).strip() or "Unnamed"
+
+
+def cond_text(r):
+    c = f'{r["v1"]} {r["op1"]} {r["t1"]:g}'
+    if r["second"]:
+        c += f' {r["conn"]} {r["v2"]} {r["op2"]} {r["t2"]:g}'
+    return c
+
+
+def rule_plain(r):
+    def part(v, op, t):
+        return f"{RULE_VITALS[v]} {op} {t:g}"
+    cond = part(r["v1"], r["op1"], r["t1"])
+    if r["second"]:
+        cond += f' {r["conn"].upper()} ' + part(r["v2"], r["op2"], r["t2"])
+    if r["type"] == "Prescribe":
+        act = f'Prescribe {r["drug"].title()} {r["dose"]:g} {DRUG_MAX[r["drug"]][1]}'
+    else:
+        act = f'{r["type"]}: {r["text"]}'
+    return cond, act
+
+
+def build_source(inp, rules):
+    """Turn the forms (Module 1 inputs + Module 2 rules) into ClinicalScript."""
+    L = ["// Generated from Module 1 (clinical input) and Module 2 (clinical logic)"]
+    for k in INPUT_ORDER:
+        L.append(f"let {k} = {inp[k]:g};")
+    for r in rules:
+        if r["type"] == "Prescribe":
+            act = f'prescribe "{r["drug"].title()}" {r["dose"]:g} {DRUG_MAX[r["drug"]][1]};'
+        else:
+            act = f'{r["type"].lower()} "{safe_text(r["text"])}";'
+        L.append(f"if {cond_text(r)} then {{\n    {act}\n}}")
+    return "\n".join(L) + "\n"
+
+
+def current_source():
+    return S["adv_src"] if S["advanced"] else build_source(S["inputs"], S["rules"])
 
 
 def get_res():
-    return compile_source(S["src"])
+    return compile_source(current_source(), S["passes"])
+
+
+# ---- callbacks
+def load_sample():
+    text = SAMPLES[S["sample_pick"]]
+    S["adv_src"] = text
+    S["adv_editor"] = text
+
+
+def load_patient():
+    for k, v in PATIENTS[S["patient_pick"]].items():
+        S["inputs"][k] = float(v)
+        S["in_" + k] = float(v)
+
+
+def add_rule():
+    typ = S["r_type"]
+    text = (S.get("r_text") or "").strip()
+    if typ != "Prescribe" and not text:
+        S["rule_err"] = "Type a message or order name before adding the rule."
+        return
+    S["rule_err"] = ""
+    S["rules"].append({
+        "v1": S["r_v1"], "op1": S["r_op1"], "t1": float(S["r_t1"]),
+        "second": bool(S.get("r_second")), "conn": S.get("r_conn", "and"),
+        "v2": S.get("r_v2", "hr"), "op2": S.get("r_op2", ">"), "t2": float(S.get("r_t2", 100.0)),
+        "type": typ, "text": text, "drug": S.get("r_drug", "paracetamol"),
+        "dose": float(S.get("r_dose", 500.0))})
+    S["r_text"] = ""
+
+
+def delete_rule(i):
+    if 0 <= i < len(S["rules"]):
+        S["rules"].pop(i)
+
+
+def reset_rules():
+    S["rules"] = [dict(r) for r in DEFAULT_RULES]
+
+
+def clear_rules():
+    S["rules"] = []
+
+
+def set_passes():
+    S["passes"] = list(S["passes_w"])
+
+
+def section(num, title, lead):
+    html(f'<div class="card sec"><span class="tag">MODULE {num}</span><h3>{esc(title)}</h3>'
+         f'<p>{esc(lead)}</p></div>')
 
 
 NORMAL = {"bp_sys": ("Systolic BP", 90, 140, "mmHg"), "bp_dia": ("Diastolic BP", 60, 90, "mmHg"),
           "hr": ("Heart rate", 60, 100, "bpm"), "spo2": ("SpO₂", 94, 100, "%"),
           "temp": ("Temperature", 36.1, 37.8, "°C"), "glucose": ("Glucose", 70, 180, "mg/dL")}
+
+
+def vit_tiles(inp):
+    t = ""
+    for key, (label, lo, hi, unit) in NORMAL.items():
+        v = inp[key]
+        b = badge("▲ HIGH", "c") if v > hi else badge("▼ LOW", "c") if v < lo else badge("✔ NORMAL", "s")
+        t += f"<div>{esc(label)}<b>{v:g} <small>{unit}</small></b>{b}</div>"
+    return f'<div class="vit">{t}</div>'
 
 
 def vitals_from(ast):
@@ -301,7 +456,7 @@ def page_cc():
 def page_patient():
     r = get_res()
     head("Patient Workflow · P-1042", "R.K., 67 · Emergency · Chest pain · Protocol: Cardiac triage v3")
-    hint("Vitals come from the protocol in Protocol Studio. Change a number there and this page updates.")
+    hint("Vitals come from the clinical input in Protocol Studio. Change a number there and this page updates.")
     vit = vitals_from(r["ast"])
     tiles = ""
     for key, (label, lo, hi, unit) in NORMAL.items():
@@ -333,11 +488,76 @@ def page_patient():
 
 
 def page_studio():
-    head("Protocol Studio", "Write clinical rules in structured text. The compiler checks, optimizes and turns them into orders.")
-    hint("The three tabs are the three compiler modules: reading the rules, checking them, and optimizing them into orders.")
-    st.selectbox("Load an example protocol", list(SAMPLES), key="sample_pick", on_change=load_sample)
-    S["src"] = st.text_area("Protocol (Ctrl+Enter to apply)", value=S["src"], height=320, key="editor")
+    head("Protocol Studio", "Enter clinical data, set the clinical logic, tune the optimization, then see how the compiler made it all work.")
+    hint("Each module has its own input. At the bottom, 'How it all works' shows the compiler steps behind your inputs.")
+    S["advanced"] = st.toggle("Advanced mode: write ClinicalScript by hand", value=S["advanced"], key="adv_w")
+    chips = st.empty()
+
+    if S["advanced"]:
+        msg("info", "Advanced mode is on. Your own ClinicalScript replaces the forms for Modules 1 and 2.")
+        st.selectbox("Load an example protocol", list(SAMPLES), key="sample_pick", on_change=load_sample)
+        kw = {} if "adv_editor" in S else {"value": S["adv_src"]}
+        S["adv_src"] = st.text_area("ClinicalScript (Ctrl+Enter to apply)", height=300, key="adv_editor", **kw)
+    else:
+        # ---------------- Module 1: clinical input
+        section(1, "Clinical Input", "Enter the patient’s details. These are the values the clinical rules work on.")
+        st.selectbox("Load an example patient", list(PATIENTS), key="patient_pick", on_change=load_patient,
+                     index=None, placeholder="Choose an example patient")
+        cols = st.columns(4)
+        for n, k in enumerate(INPUT_ORDER):
+            label, lo, hi, step, fm = FIELDS[k]
+            kw = {} if ("in_" + k) in S else {"value": float(S["inputs"][k])}
+            S["inputs"][k] = cols[n % 4].number_input(
+                label, min_value=float(lo), max_value=float(hi), step=step, format=fm, key="in_" + k, **kw)
+        html('<div class="card"><h3>Input check</h3>' + vit_tiles(S["inputs"]) + "</div>")
+
+        # ---------------- Module 2: clinical logic
+        section(2, "Clinical Logic", "Build IF … THEN rules. Each rule becomes a checked statement in the program.")
+        a, b, c = st.columns([3, 1, 2])
+        a.selectbox("IF this value", list(RULE_VITALS), format_func=RULE_VITALS.get, key="r_v1")
+        b.selectbox("Comparison", OPS, key="r_op1")
+        c.number_input("Number", value=100.0, step=1.0, key="r_t1")
+        st.checkbox("Add a second condition", key="r_second")
+        if S.get("r_second"):
+            d, e, f, g = st.columns([1, 3, 1, 2])
+            d.selectbox("Join with", ["and", "or"], key="r_conn")
+            e.selectbox("Second value", list(RULE_VITALS), format_func=RULE_VITALS.get, key="r_v2")
+            f.selectbox("Second comparison", OPS, key="r_op2")
+            g.number_input("Second number", value=100.0, step=1.0, key="r_t2")
+        st.selectbox("THEN", ["Alert", "Order", "Prescribe"], key="r_type")
+        if S["r_type"] == "Prescribe":
+            h, i_ = st.columns(2)
+            h.selectbox("Drug", list(DRUG_MAX), format_func=str.title, key="r_drug")
+            i_.number_input(f"Dose ({DRUG_MAX[S['r_drug']][1]})", min_value=0.0, value=500.0,
+                            step=50.0, key="r_dose")
+        else:
+            st.text_input("Alert message" if S["r_type"] == "Alert" else "Order or test name", key="r_text")
+        st.button("➕ Add rule", on_click=add_rule)
+        if S.get("rule_err"):
+            msg("err", S["rule_err"])
+
+        st.markdown(f"**Rules ({len(S['rules'])})**")
+        for i, rule in enumerate(S["rules"]):
+            cond, act = rule_plain(rule)
+            c1, c2 = st.columns([7, 2])
+            with c1:
+                html(f'<div class="rule"><b>{i + 1}.</b> IF {esc(cond)} → THEN {esc(act)}</div>')
+            c2.button("🗑 Remove", key=f"del_{i}", on_click=delete_rule, args=(i,), help=f"Remove rule {i + 1}")
+        x, y, _ = st.columns([2, 2, 5])
+        x.button("↺ Load starter rules", on_click=reset_rules)
+        y.button("✖ Clear all rules", on_click=clear_rules)
+
+    # ---------------- compile once, show logic check
     r = get_res()
+    for e in r["syntax_errors"]:
+        msg("err", e)
+    if r["sem"]:
+        for e in r["sem"]["errors"]:
+            msg("err", e)
+        for w in r["sem"]["warnings"]:
+            msg("warn", w)
+        if not r["sem"]["errors"]:
+            msg("ok", "Logic check passed: types, vital ranges and dose limits are all satisfied.")
 
     syn = not r["syntax_errors"]
     sem = bool(r["sem"]) and not r["sem"]["errors"]
@@ -346,12 +566,54 @@ def page_studio():
               ("Safety check", "wait" if not syn else ("ok" if sem else "err")),
               (opt_txt, "ok" if r["ok"] else "wait"), ("Orders generated", "ok" if r["ok"] else "wait")]
     mark = {"ok": "✔", "err": "✖", "wait": "○"}
-    html('<div class="stages" role="status" aria-label="Compilation stages">' + "".join(
-        f'<span class="st {c}">{mark[c]} {esc(t)}</span>' for t, c in states) + "</div>")
+    with chips.container():
+        html('<div class="stages" role="status" aria-label="Compilation stages">' + "".join(
+            f'<span class="st {cl}">{mark[cl]} {esc(t)}</span>' for t, cl in states) + "</div>")
 
-    t1, t2, t3 = st.tabs(["① Syntax analysis", "② Logic & intermediate code", "③ Optimize & generate"])
+    # ---------------- Module 3: workflow optimization
+    section(3, "Workflow Optimization", "Choose how the compiler simplifies the workflow, then approve the orders to release.")
+    st.multiselect("Optimizations to apply", list(PASS_LABELS), default=S["passes"],
+                   format_func=PASS_LABELS.get, key="passes_w", on_change=set_passes)
+    approved = []
+    if not r["ok"]:
+        msg("warn", "Fix the errors above before the workflow can be optimized.")
+    else:
+        s = r["stats"]
+        kpis([("Before", s["before"], "IR instructions", ""), ("After", s["after"], "IR instructions", ""),
+              ("Reduction", s["reduction"], "less work", "%"), ("Passes", s["passes"], "until nothing changed", "")])
+        if r["equivalent"]:
+            msg("ok", "Verified: the optimized workflow gives the same clinical actions as the original (duplicates collapsed).")
+        else:
+            msg("err", "The optimized workflow differs from the original. This is a compiler bug.")
+        st.markdown("**Clinician approval: tick the orders to release**")
+        acts = r["run_opt"]
+        if not acts:
+            msg("info", "This protocol produced no actions for the current inputs.")
+        for k, t in acts:
+            if st.checkbox(f"{ICONS[k]} · {t}  →  {route(k, t)}", value=True, key=f"ap_{k}_{t}"):
+                approved.append((k, t))
+        if acts:
+            msg("ok", f"{len(approved)} of {len(acts)} actions released to departments.")
+            st.dataframe(pd.DataFrame([(ICONS[k], t, route(k, t)) for k, t in approved],
+                                      columns=["Type", "Detail", "Released to"]), hide_index=True)
+            report = ("ClinicFlow report\n\nReleased actions:\n" + "\n".join(f"- {k}: {t}" for k, t in approved) +
+                      f"\n\nInstructions: {s['before']} -> {s['after']} ({s['reduction']}% reduction)\n")
+            d1, d2 = st.columns(2)
+            d1.download_button("⬇ Released orders (JSON)", to_orders_json(approved), "orders.json")
+            d2.download_button("⬇ Text report", report, "report.txt")
+
+    # ---------------- how it all works
+    html('<h3 style="margin-top:2rem">How it all works</h3>'
+         '<p class="mut">The same inputs, seen through the compiler. Each module has a matching compiler phase.</p>'
+         '<div class="how">'
+         '<div><small>MODULE 1 → SYNTAX ANALYSIS</small><b>Clinical input is read, tokenized and parsed</b></div>'
+         '<div><small>MODULE 2 → INTERMEDIATE CODE</small><b>Clinical logic becomes checked three-address code</b></div>'
+         '<div><small>MODULE 3 → CODE GENERATION</small><b>The optimized workflow becomes executable orders</b></div></div>')
+    t1, t2, t3 = st.tabs(["① Syntax analysis", "② Intermediate code generation", "③ Automated code generation"])
 
     with t1:
+        st.markdown("**ClinicalScript produced from your inputs**")
+        st.code(current_source(), language="text")
         if r["syntax_errors"]:
             for e in r["syntax_errors"]:
                 msg("err", e)
@@ -359,75 +621,56 @@ def page_studio():
             msg("ok", f"No syntax errors. {len(r['tokens']) - 1} tokens and {len(r['ast']['body'])} top-level statements.")
         a, b = st.columns(2)
         with a:
-            st.markdown("**Tokens**")
+            st.markdown("**Tokens (lexical analysis)**")
             st.dataframe(pd.DataFrame([{"Line": t.line, "Col": t.col, "Type": t.type, "Lexeme": t.value}
                                        for t in r["tokens"] if t.type != "EOF"]), hide_index=True)
         with b:
-            st.markdown("**Parse tree**")
+            st.markdown("**Parse tree (syntax analysis)**")
             st.code(pretty(r["ast"]), language="text")
 
     with t2:
-        if r["syntax_errors"]:
-            msg("warn", "Fix the syntax errors first.")
+        if not r["ok"]:
+            msg("warn", "Intermediate code is generated once the program passes syntax and logic checks.")
         else:
-            for e in r["sem"]["errors"]:
-                msg("err", e)
-            for w in r["sem"]["warnings"]:
-                msg("warn", w)
-            if not r["sem"]["errors"]:
-                msg("ok", "Semantic analysis passed. Types, vital ranges and dose limits are satisfied.")
-                a, b = st.columns([2, 3])
-                with a:
-                    st.markdown("**Symbol table**")
-                    st.dataframe(pd.DataFrame([{"Name": k, "Type": v} for k, v in r["sem"]["symbols"].items()]),
-                                 hide_index=True)
-                with b:
-                    st.markdown("**Three-address code**")
-                    st.code(listing(r["ir"]), language="text")
+            a, b = st.columns([2, 3])
+            with a:
+                st.markdown("**Symbol table**")
+                st.dataframe(pd.DataFrame([{"Name": k, "Type": v} for k, v in r["sem"]["symbols"].items()]),
+                             hide_index=True)
+            with b:
+                st.markdown("**What the optimizer changed**")
+                if r["log"]:
+                    st.dataframe(pd.DataFrame(r["log"], columns=["Optimization", "What changed"]), hide_index=True)
+                else:
+                    st.write("No optimization was applied.")
+            a, b = st.columns(2)
+            a.markdown(f"**Three-address code before ({len(r['ir'])} instructions)**")
+            a.code(listing(r["ir"]), language="text")
+            b.markdown(f"**Three-address code after ({len(r['opt'])} instructions)**")
+            b.code(listing(r["opt"]), language="text")
 
     with t3:
         if not r["ok"]:
-            msg("warn", "Fix the errors in the first two tabs before optimizing.")
+            msg("warn", "Code is generated once the program passes all checks.")
         else:
-            s = r["stats"]
-            kpis([("Before", s["before"], "IR instructions", ""), ("After", s["after"], "IR instructions", ""),
-                  ("Reduction", s["reduction"], "less work", "%"), ("Passes", s["passes"], "until nothing changed", "")])
-            if r["equivalent"]:
-                msg("ok", "Verified: the optimized program produces the same clinical actions as the original (duplicate orders collapsed).")
-            else:
-                msg("err", "The optimized program differs from the original. This is a compiler bug.")
-            st.markdown("**What the optimizer changed**")
-            if r["log"]:
-                st.dataframe(pd.DataFrame(r["log"], columns=["Optimization", "What changed"]), hide_index=True)
-                st.bar_chart(pd.DataFrame({"Count": s["by_pass"]}))
-                st.caption("Text alternative: " + ", ".join(f"{k}: {v}" for k, v in s["by_pass"].items()))
-            a, b = st.columns(2)
-            a.markdown("**Before**")
-            a.code(listing(r["ir"]), language="text")
-            b.markdown("**After**")
-            b.code(listing(r["opt"]), language="text")
             a, b = st.columns(2)
             a.markdown("**ClinicalVM assembly**")
             a.code(r["asm"], language="nasm")
             b.markdown("**Generated Python**")
             b.code(r["py"], language="python")
-            st.markdown("**Clinical actions produced**")
-            st.dataframe(pd.DataFrame([(ICONS[k], t, route(k, t)) for k, t in r["run_opt"]],
-                                      columns=["Type", "Detail", "Routed to"]), hide_index=True)
-            orders = to_orders_json(r["run_opt"])
-            with st.expander("FHIR-style orders (simplified, for teaching)"):
-                st.code(orders, language="json")
-            report = ("ClinicFlow report\n\n" + "\n".join(f"- {k}: {v}" for k, v in r["run_opt"]) +
-                      f"\n\nInstructions: {s['before']} -> {s['after']} ({s['reduction']}% reduction)\n")
-            d1, d2, d3, d4 = st.columns(4)
+            st.markdown("**FHIR-style orders (simplified, for teaching)**")
+            st.code(to_orders_json(r["run_opt"]), language="json")
+            st.markdown("**Run and verify**")
+            st.write(f"The original program produced {len(r['run_raw'])} actions. "
+                     f"The optimized program produced {len(r['run_opt'])} actions, "
+                     f"{'with the same clinical result.' if r['equivalent'] else 'but the results differ.'}")
+            d1, d2 = st.columns(2)
             d1.download_button("⬇ Assembly", r["asm"], "workflow.asm")
             d2.download_button("⬇ Python", r["py"], "workflow.py")
-            d3.download_button("⬇ Orders JSON", orders, "orders.json")
-            d4.download_button("⬇ Text report", report, "report.txt")
-    summary = ("Protocol studio. " + (f"{len(r['syntax_errors'])} syntax errors. " + " ".join(r["syntax_errors"])
-               if r["syntax_errors"] else "No syntax errors. ") +
-               (f"The optimizer reduced {r['stats']['before']} steps to {r['stats']['after']}." if r["ok"] else ""))
-    speak(summary)
+
+    speak("Protocol studio. " + (" ".join(r["syntax_errors"]) if r["syntax_errors"] else "No syntax errors. ") +
+          (f"The optimizer reduced {r['stats']['before']} steps to {r['stats']['after']}. "
+           f"{len(approved)} actions are approved for release." if r["ok"] else ""))
 
 
 STAGES = [
