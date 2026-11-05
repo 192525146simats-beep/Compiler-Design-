@@ -396,13 +396,12 @@ def speak(text):
 
 
 # ================================================================== voice assistant
-# Use a generally available API model by default. You can override this in
-# Streamlit Secrets with OPENAI_MODEL = "your-enabled-model".
+# Groq model can be changed in Streamlit Secrets using GROQ_MODEL.
 try:
-    VOICE_MODEL = str(st.secrets.get("OPENAI_MODEL", "") or "").strip()
+    GROQ_MODEL = str(st.secrets.get("GROQ_MODEL", "") or "").strip()
 except Exception:
-    VOICE_MODEL = ""
-VOICE_MODEL = VOICE_MODEL or os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+    GROQ_MODEL = ""
+GROQ_MODEL = GROQ_MODEL or os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 VOICE_LANGS = {"English (India)": "en-IN", "English (US)": "en-US", "தமிழ் (Tamil)": "ta-IN",
                "हिन्दी (Hindi)": "hi-IN", "తెలుగు (Telugu)": "te-IN"}
 
@@ -519,85 +518,97 @@ def local_intent(q):
 
 
 def ask_claude(q):
-    """General-purpose ClinicFlow AI using the OpenAI Responses API."""
+    """General-purpose ClinicFlow AI using the Groq chat-completions API."""
     # Streamlit Cloud Secrets take priority over environment variables.
     api_key = None
     try:
-        api_key = st.secrets.get("OPENAI_API_KEY")
+        api_key = st.secrets.get("GROQ_API_KEY")
     except Exception:
         api_key = None
-    if not api_key:
-        api_key = os.getenv("OPENAI_API_KEY")
-    api_key = str(api_key).strip() if api_key else ""
 
     if not api_key:
+        api_key = os.getenv("GROQ_API_KEY")
+
+    api_key = str(api_key).strip() if api_key else ""
+    if not api_key:
         return (
-            "OpenAI API key is missing. Add OPENAI_API_KEY to your Streamlit "
+            "Groq API key is missing. Add GROQ_API_KEY to your Streamlit "
             "app Secrets, save, and reboot the app."
         )
 
     try:
-        from openai import OpenAI
+        from groq import Groq
 
-        client = OpenAI(api_key=api_key, timeout=60.0, max_retries=2)
+        client = Groq(api_key=api_key, timeout=60.0, max_retries=2)
 
-        # Only general AI conversation turns are sent to OpenAI. Local patient
-        # lookups and other built-in hospital commands are deliberately excluded.
-        history = []
+        # Keep a short conversation history for follow-up questions.
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are ClinicFlow AI Voice, a friendly and concise assistant "
+                    "inside a hospital workflow demonstration application. Answer "
+                    "questions about general knowledge, science, technology, education, "
+                    "programming, mathematics, history, languages, and daily life. "
+                    "The selected speech language is "
+                    + str(S.get("voice_lang_name", S.get("floating_voice_lang", "English (India)")))
+                    + ". Reply in the language used by the user, using natural spoken "
+                    "wording and normally 2 to 6 sentences. Avoid Markdown tables. "
+                    "For medical topics, provide general educational information only: "
+                    "do not diagnose, prescribe, or recommend patient-specific doses. "
+                    "For emergencies, advise contacting local emergency services and "
+                    "a qualified clinician. Do not request, infer, or expose "
+                    "patient-identifying information. This is an academic demonstration, "
+                    "not a clinical decision system. Do not claim to have searched the "
+                    "web or accessed live information."
+                ),
+            }
+        ]
+
+        # Add the last few AI conversation turns, but not built-in local commands.
         for old_q, old_a in S.get("voice_ai_history", [])[-4:]:
-            history.append({"role": "user", "content": old_q})
-            history.append({"role": "assistant", "content": old_a})
+            messages.append({"role": "user", "content": old_q})
+            messages.append({"role": "assistant", "content": old_a})
 
-        language_name = S.get("voice_lang_name", S.get("floating_voice_lang", "English (India)"))
-        instructions = (
-            "You are ClinicFlow AI Voice, a friendly general-purpose assistant "
-            "inside a hospital workflow demonstration application. Answer questions "
-            "about general knowledge, science, technology, education, programming, "
-            "mathematics, history, language, and daily life. Use web search when "
-            "information may be current or when the user asks for latest information. "
-            "Be honest about uncertainty and never claim to have searched if you did not. "
-            "The selected speech language is " + language_name + ". Reply in the "
-            "language used by the user, using natural spoken wording and normally "
-            "2 to 6 sentences. Avoid Markdown tables. For medical topics, provide "
-            "general educational information only: do not diagnose, prescribe, or "
-            "recommend patient-specific doses. For emergencies, advise contacting "
-            "local emergency services and a qualified clinician. Do not request, "
-            "infer, or expose patient-identifying information. This is an academic "
-            "demonstration, not a clinical decision system."
+        messages.append({"role": "user", "content": q})
+
+        chat_completion = client.chat.completions.create(
+            messages=messages,
+            model=GROQ_MODEL,
+            temperature=0.4,
+            max_completion_tokens=700,
         )
 
-        response = client.responses.create(
-            model=VOICE_MODEL,
-            instructions=instructions,
-            tools=[{"type": "web_search"}],
-            tool_choice="auto",
-            input=history + [{"role": "user", "content": q}],
-            max_output_tokens=700,
-        )
-        answer = (response.output_text or "").strip()
+        answer = chat_completion.choices[0].message.content
+        answer = (answer or "").strip()
         return answer or "I could not prepare an answer. Please try asking another way."
 
     except ImportError:
-        return "The OpenAI package is missing. Add openai to requirements.txt and redeploy."
+        return "The Groq package is missing. Add groq to requirements.txt and redeploy."
     except Exception as error:
         error_name = type(error).__name__
+
         if error_name == "AuthenticationError":
             return (
-                "OpenAI rejected the API key. In Streamlit Cloud, open App settings "
-                "then Secrets. Replace OPENAI_API_KEY with a newly created, active "
-                "API key, save, and reboot the app. Do not paste the key into GitHub."
+                "Groq rejected the API key. Check GROQ_API_KEY in Streamlit Cloud "
+                "Secrets, then save and reboot the app."
             )
         if error_name == "RateLimitError":
-            return "OpenAI rate limit or API billing quota reached. Check API billing and usage."
-        if error_name in ("NotFoundError", "BadRequestError"):
             return (
-                f"The configured OpenAI model or request is not accepted ({error_name}). "
-                "Check OPENAI_MODEL in Streamlit Secrets; otherwise remove it to use "
-                "the default model."
+                "The Groq API usage limit has been reached. Please wait and try again "
+                "later, or check your Groq account limits."
             )
         if error_name in ("APIConnectionError", "APITimeoutError"):
-            return "ClinicFlow could not connect to OpenAI. Please try again shortly."
-        return f"ClinicFlow AI encountered {error_name}. Check the app configuration and try again."
+            return "ClinicFlow could not connect to Groq. Please try again shortly."
+        if error_name == "BadRequestError":
+            return (
+                "Groq did not accept the request or model. Check GROQ_MODEL in "
+                "Streamlit Secrets and make sure the selected model is available."
+            )
+        return (
+            f"ClinicFlow AI connection failed ({error_name}). "
+            "Please check your Groq API configuration and try again."
+        )
 
 
 def handle_voice():
@@ -1303,8 +1314,8 @@ def render_floating_voice_button():
 
 
 def page_voice():
-    head("ClinicFlow AI Voice", "Your multilingual AI assistant for hospital workflows and general knowledge, with live web search.")
-    hint("Tap the microphone and speak naturally. ClinicFlow can answer general questions, search the web when needed, read demo hospital information, and speak its reply aloud.")
+    head("ClinicFlow AI Voice", "Your multilingual AI assistant for hospital workflows and general knowledge.")
+    hint("Tap the microphone and speak naturally. ClinicFlow can answer general questions, read demo hospital information, and speak its reply aloud.")
     lang_name = st.selectbox("Voice language", list(VOICE_LANGS), key="voice_lang_name")
     lang = VOICE_LANGS[lang_name]
     components.html(MIC_HTML.replace("__LANG__", lang), height=190)
