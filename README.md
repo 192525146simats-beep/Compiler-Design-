@@ -1,6 +1,8 @@
-# CSA 1401 Compiler Design Lab & ClinicFlow Project
+# CSA 1401 – Compiler Design Lab & ClinicFlow Project
 
-This repository contains the complete set of **Compiler Design Lab Experiments** implemented using C, LEX, and FLEX, along with the **ClinicFlow** web application project.
+This repository contains the complete collection of **Compiler Design Lab Experiments** implemented using C, LEX, and FLEX, along with **ClinicFlow**, a web-based healthcare application developed using Python and modern web technologies.
+
+The repository combines compiler design practical implementations with a healthcare-focused application project.
 
 ---
 
@@ -10,22 +12,39 @@ This repository contains the complete set of **Compiler Design Lab Experiments**
 
 ---
 
-## 📁 Folder Structure
+## 📁 Repository Structure
 
 ```text
 Compiler-Design-/
-├── LAB EXPERIMENTS/             # Source code and implementations for Compiler Design lab experiments
-├── clinicflow/                  # ClinicFlow web application source code (Python, HTML, CSS, JS, Groq API)
-├── CO 1 TOOL ASSESSMENT.pdf     # Course Outcome 1 tool assessment document
-├── lab experiment.pdf           # Lab experiment manual / documentation
-└── README.md                    # Project documentation and list of experiments
+│
+├── LAB EXPERIMENTS/
+│   └── Compiler Design lab source codes and implementations
+│
+├── clinicflow/
+│   └── ClinicFlow web application source code
+│       ├── Python
+│       ├── HTML
+│       ├── CSS
+│       ├── JavaScript
+│       └── Groq API integration
+│
+├── CO 1 TOOL ASSESSMENT.pdf
+│   └── Course Outcome 1 Tool Assessment
+│
+├── lab experiment.pdf
+│   └── Compiler Design Lab Manual / Documentation
+│
+└── README.md
+```
 
-# COMPILER DESIGN LAB – LIST OF EXPERIMENTS
+---
+
+# 🧪 COMPILER DESIGN LAB – LIST OF EXPERIMENTS
 
 ## 📋 List of Experiments
 
-| S.No | Experiment Name |
-|------|-----------------|
+| S.No. | Experiment Name |
+|:---:|---|
 | 1 | Develop a Lexical Analyzer to Identify Identifiers, Constants, and Operators Using C |
 | 2 | Develop a Lexical Analyzer to Identify Single-Line and Multi-Line Comments in C |
 | 3 | Design a Lexical Analyzer to Ignore Redundant Spaces, Tabs, New Lines, and Comments |
@@ -69,32 +88,134 @@ Compiler-Design-/
 
 ---
 
+## 🩺 ClinicFlow – Healthcare Web Application
+
+**ClinicFlow** is a web-based healthcare application developed as part of the project work. It combines Python-based functionality with a web interface and AI integration.
+
+### Live Demo
+
+🔗 [Open ClinicFlow](https://clinic-flow.streamlit.app/)
+
+### Features
+
+- Interactive web-based user interface
+- Python-powered application
+- AI integration using Groq API
+- Healthcare-related workflow and functionality
+- Web-based accessibility
+- Streamlit deployment
+
+### Technologies Used
+
+- Python
+- Streamlit
+- HTML
+- CSS
+- JavaScript
+- Groq API
+
+---
+
 ## 🛠️ Technologies Used
 
+### Compiler Design Lab
+
 - C Programming
-- LEX (Lexical Analyzer Generator)
+- LEX
 - FLEX (Fast Lexical Analyzer)
 - GCC Compiler
 - Command Prompt / Terminal
 
+### ClinicFlow Application
+
+- Python
+- Streamlit
+- HTML5
+- CSS3
+- JavaScript
+- Groq API
+
+---
+
 ## 🎯 Objective
 
-To understand the fundamental concepts of Compiler Design by implementing lexical analysis, syntax analysis, parsing techniques, intermediate code generation, symbol table management, and other compiler-related operations using C, LEX, and FLEX.
+The objective of this repository is to understand and implement the fundamental concepts of Compiler Design through practical experiments and to develop a web-based application using Python and modern web technologies.
+
+The compiler lab experiments focus on lexical analysis, syntax analysis, parsing techniques, intermediate code generation, symbol table management, and compiler-related algorithms.
+
+ClinicFlow demonstrates the development and deployment of an interactive Python web application with AI integration.
+
+---
 
 ## 📚 Topics Covered
 
 - Lexical Analysis
 - Token Recognition
 - Identifiers and Operators
+- Constants and Keywords
 - Comment Handling
 - FIRST and FOLLOW Sets
-- Left Recursion and Left Factoring
+- Left Recursion Elimination
+- Left Factoring
+- Context-Free Grammars
 - Symbol Table Operations
 - Recursive Descent Parsing
-- Top-Down and Bottom-Up Parsing
+- Top-Down Parsing
+- Bottom-Up Parsing
 - Intermediate Code Generation
 - Three Address Code
 - Compiler Backend
 - LEADING and TRAILING Sets
 - LEX and FLEX Programming
-- Pattern Matching and Validation
+- Pattern Matching
+- Input Validation
+- File Processing
+- Python Web Application Development
+- AI API Integration
+
+---
+
+## 👩‍💻 Academic Information
+
+| Detail | Information |
+|---|---|
+| Course Code | CSA 1401 |
+| Course Name | Compiler Design |
+| Project | Compiler Design Lab & ClinicFlow |
+| Programming Language | C, Python |
+| Tools | LEX, FLEX, GCC |
+| Web Framework | Streamlit |
+
+---
+
+## 🚀 Getting Started
+
+### Compiler Design Lab Experiments
+
+1. Clone or download this repository.
+2. Navigate to the `LAB EXPERIMENTS` folder.
+3. Open the required experiment source file.
+4. Compile the C program using GCC or run the LEX/FLEX programs using the appropriate tools.
+5. Execute the program and provide the required input.
+
+### ClinicFlow
+
+Visit the deployed application:
+
+🔗 [https://clinic-flow.streamlit.app/](https://clinic-flow.streamlit.app/)
+
+---
+
+## 📌 Purpose of This Repository
+
+This repository serves as:
+
+- Compiler Design laboratory reference
+- Practical implementation collection
+- Academic project repository
+- C, LEX, and FLEX programming reference
+- Python web application showcase
+
+---
+
+**Built for learning, experimentation, and practical implementation of Compiler Design concepts.**
